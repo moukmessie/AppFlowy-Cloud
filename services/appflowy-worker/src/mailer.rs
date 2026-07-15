@@ -119,6 +119,7 @@ mod tests {
       "localhost",
       465,
       "none",
+      "support@appflowy.io".to_string(),
     )
     .await
     .unwrap();

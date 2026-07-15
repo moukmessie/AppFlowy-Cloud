@@ -42,5 +42,6 @@ module.exports = {
     mentionerName: "John Doe",
     mentionerIconUrl: "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
     mentionedAt: "Jul 22, 2025, 3:42 PM (UTC)",
+    supportEmail: "support@appflowy.io",
   },
 };

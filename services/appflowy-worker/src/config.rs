@@ -57,6 +57,7 @@ impl Config {
         smtp_username: get_env_var("APPFLOWY_MAILER_SMTP_USERNAME", "sender@example.com"),
         smtp_password: get_env_var("APPFLOWY_MAILER_SMTP_PASSWORD", "password").into(),
         smtp_tls_kind: get_env_var("APPFLOWY_MAILER_SMTP_TLS_KIND", "wrapper"),
+        support_email: get_env_var("APPFLOWY_MAILER_SUPPORT_EMAIL", "support@appflowy.io"),
       },
     })
   }

@@ -94,14 +94,14 @@ pub async fn create_app(listener: TcpListener, config: Config) -> Result<(), Err
 
   let state = AppState {
     redis_client,
-    pg_pool,
+    pg_pool: pg_pool.clone(),
     s3_client,
     mailer: mailer.clone(),
     metrics,
   };
 
   let local_set = LocalSet::new();
-  let email_notifier = EmailNotifier::new(mailer);
+  let email_notifier = EmailNotifier::new(mailer, pg_pool);
   let tick_interval = get_env_var("APPFLOWY_WORKER_IMPORT_TICK_INTERVAL", "10")
     .parse::<u64>()
     .unwrap_or(10);
@@ -174,6 +174,7 @@ async fn get_worker_mailer(config: &Config) -> Result<AFWorkerMailer, Error> {
     &config.mailer.smtp_host,
     config.mailer.smtp_port,
     config.mailer.smtp_tls_kind.as_str(),
+    config.mailer.support_email.clone(),
   )
   .await?;
 

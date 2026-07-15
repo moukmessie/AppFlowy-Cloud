@@ -40,6 +40,7 @@ module.exports = {
     mentionerName: "{{ mentioner_name }}",
     mentionerIconUrl: "{{ mentioner_icon_url }}",
     mentionedAt: "{{ mentioned_at }}",
+    supportEmail: "{{ support_email }}",
   },
   inlineCSS: true,
   removeUnusedCSS: true,

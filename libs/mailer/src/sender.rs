@@ -13,6 +13,7 @@ use secrecy::ExposeSecret;
 pub struct Mailer {
   smtp_transport: AsyncSmtpTransport<lettre::Tokio1Executor>,
   smtp_email: String,
+  support_email: String,
   handlers: Handlebars<'static>,
 }
 impl Mailer {
@@ -23,6 +24,7 @@ impl Mailer {
     smtp_host: &str,
     smtp_port: u16,
     smtp_tls_kind: &str,
+    support_email: String,
   ) -> Result<Self, anyhow::Error> {
     let creds = Credentials::new(smtp_username, smtp_password.expose_secret().to_string());
     let tls: Tls = match smtp_tls_kind {
@@ -42,8 +44,25 @@ impl Mailer {
     Ok(Self {
       smtp_transport,
       smtp_email,
+      support_email,
       handlers,
     })
+  }
+
+  /// Merges the configured support email into the template context under the
+  /// `support_email` key, so every template can reference `{{ support_email }}`
+  /// without every caller having to thread it through their param struct.
+  fn with_support_email<T>(&self, param: &T) -> Result<serde_json::Value, anyhow::Error>
+  where
+    T: serde::Serialize,
+  {
+    let mut value = serde_json::to_value(param)?;
+    if let serde_json::Value::Object(ref mut map) = value {
+      map
+        .entry("support_email")
+        .or_insert_with(|| serde_json::Value::String(self.support_email.clone()));
+    }
+    Ok(value)
   }
 
   pub async fn register_template(
@@ -59,7 +78,8 @@ impl Mailer {
   where
     T: serde::Serialize,
   {
-    let rendered = self.handlers.render(name, param)?;
+    let param = self.with_support_email(param)?;
+    let rendered = self.handlers.render(name, &param)?;
     Ok(rendered)
   }
 
@@ -74,6 +94,7 @@ impl Mailer {
   where
     T: serde::Serialize,
   {
+    let param = self.with_support_email(&param)?;
     let rendered = self.handlers.render(template_name, &param)?;
     let email = Message::builder()
       .from(lettre::message::Mailbox::new(
