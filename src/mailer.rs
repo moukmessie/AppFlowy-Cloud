@@ -1,4 +1,5 @@
 use mailer::sender::Mailer;
+use mailer::Language;
 use std::collections::HashMap;
 
 pub const WORKSPACE_INVITE_TEMPLATE_NAME: &str = "workspace_invite";
@@ -6,6 +7,10 @@ pub const WORKSPACE_ACCESS_REQUEST_TEMPLATE_NAME: &str = "workspace_access_reque
 pub const WORKSPACE_ACCESS_REQUEST_APPROVED_NOTIFICATION_TEMPLATE_NAME: &str =
   "workspace_access_request_approved_notification";
 pub const PAGE_MENTION_NOTIFICATION_TEMPLATE_NAME: &str = "page_mention_notification";
+
+fn localized_template_name(base: &str, language: Language) -> String {
+  format!("{base}_{}", language.template_suffix())
+}
 
 #[derive(Clone)]
 pub struct AFCloudMailer(Mailer);
@@ -19,17 +24,24 @@ impl AFCloudMailer {
     &self,
     email: &str,
     param: WorkspaceInviteMailerParam,
+    language: Language,
   ) -> Result<(), anyhow::Error> {
-    let subject = format!(
-      "{} invited you to {} in AppFlowy",
-      param.username, param.workspace_name
-    );
+    let subject = match language {
+      Language::En => format!(
+        "{} invited you to {} in AppFlowy",
+        param.username, param.workspace_name
+      ),
+      Language::Fr => format!(
+        "{} vous invite à rejoindre {} dans AppFlowy",
+        param.username, param.workspace_name
+      ),
+    };
     self
       .0
       .send_email_template(
         Some(param.username.clone()),
         email,
-        WORKSPACE_INVITE_TEMPLATE_NAME,
+        &localized_template_name(WORKSPACE_INVITE_TEMPLATE_NAME, language),
         param,
         &subject,
       )
@@ -50,17 +62,24 @@ impl AFCloudMailer {
     recipient_name: &str,
     email: &str,
     param: WorkspaceAccessRequestMailerParam,
+    language: Language,
   ) -> Result<(), anyhow::Error> {
-    let subject = format!(
-      "{} requested access to {} in AppFlowy",
-      param.username, param.workspace_name
-    );
+    let subject = match language {
+      Language::En => format!(
+        "{} requested access to {} in AppFlowy",
+        param.username, param.workspace_name
+      ),
+      Language::Fr => format!(
+        "{} a demandé l'accès à {} dans AppFlowy",
+        param.username, param.workspace_name
+      ),
+    };
     self
       .0
       .send_email_template(
         Some(recipient_name.to_string()),
         email,
-        WORKSPACE_ACCESS_REQUEST_TEMPLATE_NAME,
+        &localized_template_name(WORKSPACE_ACCESS_REQUEST_TEMPLATE_NAME, language),
         param,
         &subject,
       )
@@ -72,14 +91,21 @@ impl AFCloudMailer {
     recipient_name: &str,
     email: &str,
     param: WorkspaceAccessRequestApprovedMailerParam,
+    language: Language,
   ) -> Result<(), anyhow::Error> {
-    let subject = "Notification: Workspace access request approved";
+    let subject = match language {
+      Language::En => "Notification: Workspace access request approved",
+      Language::Fr => "Notification : demande d'accès à l'espace de travail approuvée",
+    };
     self
       .0
       .send_email_template(
         Some(recipient_name.to_string()),
         email,
-        WORKSPACE_ACCESS_REQUEST_APPROVED_NOTIFICATION_TEMPLATE_NAME,
+        &localized_template_name(
+          WORKSPACE_ACCESS_REQUEST_APPROVED_NOTIFICATION_TEMPLATE_NAME,
+          language,
+        ),
         param,
         subject,
       )
@@ -91,17 +117,24 @@ impl AFCloudMailer {
     recipient_name: &str,
     email: &str,
     param: &PageMentionNotificationMailerParam,
+    language: Language,
   ) -> Result<(), anyhow::Error> {
-    let subject = format!(
-      "{} has mentioned you in {} in AppFlowy",
-      param.mentioner_name, param.mentioned_page_name
-    );
+    let subject = match language {
+      Language::En => format!(
+        "{} has mentioned you in {} in AppFlowy",
+        param.mentioner_name, param.mentioned_page_name
+      ),
+      Language::Fr => format!(
+        "{} vous a mentionné(e) dans {} dans AppFlowy",
+        param.mentioner_name, param.mentioned_page_name
+      ),
+    };
     self
       .0
       .send_email_template(
         Some(recipient_name.to_string()),
         email,
-        PAGE_MENTION_NOTIFICATION_TEMPLATE_NAME,
+        &localized_template_name(PAGE_MENTION_NOTIFICATION_TEMPLATE_NAME, language),
         param,
         &subject,
       )
@@ -110,34 +143,69 @@ impl AFCloudMailer {
 }
 
 async fn register_mailer(mailer: &mut Mailer) -> Result<(), anyhow::Error> {
-  let workspace_invite_template =
+  let workspace_invite_template_en =
     include_str!("../assets/mailer_templates/build_production/workspace_invitation.html");
-  let access_request_template =
+  let workspace_invite_template_fr =
+    include_str!("../assets/mailer_templates/build_production/workspace_invitation_fr.html");
+  let access_request_template_en =
     include_str!("../assets/mailer_templates/build_production/access_request.html");
-  let access_request_approved_notification_template = include_str!(
+  let access_request_template_fr =
+    include_str!("../assets/mailer_templates/build_production/access_request_fr.html");
+  let access_request_approved_notification_template_en = include_str!(
     "../assets/mailer_templates/build_production/access_request_approved_notification.html"
   );
-  let page_mention_notification_template =
+  let access_request_approved_notification_template_fr = include_str!(
+    "../assets/mailer_templates/build_production/access_request_approved_notification_fr.html"
+  );
+  let page_mention_notification_template_en =
     include_str!("../assets/mailer_templates/build_production/page_mention_notification.html");
+  let page_mention_notification_template_fr =
+    include_str!("../assets/mailer_templates/build_production/page_mention_notification_fr.html");
+
   let template_strings = HashMap::from([
-    (WORKSPACE_INVITE_TEMPLATE_NAME, workspace_invite_template),
     (
-      WORKSPACE_ACCESS_REQUEST_TEMPLATE_NAME,
-      access_request_template,
+      localized_template_name(WORKSPACE_INVITE_TEMPLATE_NAME, Language::En),
+      workspace_invite_template_en,
     ),
     (
-      WORKSPACE_ACCESS_REQUEST_APPROVED_NOTIFICATION_TEMPLATE_NAME,
-      access_request_approved_notification_template,
+      localized_template_name(WORKSPACE_INVITE_TEMPLATE_NAME, Language::Fr),
+      workspace_invite_template_fr,
     ),
     (
-      PAGE_MENTION_NOTIFICATION_TEMPLATE_NAME,
-      page_mention_notification_template,
+      localized_template_name(WORKSPACE_ACCESS_REQUEST_TEMPLATE_NAME, Language::En),
+      access_request_template_en,
+    ),
+    (
+      localized_template_name(WORKSPACE_ACCESS_REQUEST_TEMPLATE_NAME, Language::Fr),
+      access_request_template_fr,
+    ),
+    (
+      localized_template_name(
+        WORKSPACE_ACCESS_REQUEST_APPROVED_NOTIFICATION_TEMPLATE_NAME,
+        Language::En,
+      ),
+      access_request_approved_notification_template_en,
+    ),
+    (
+      localized_template_name(
+        WORKSPACE_ACCESS_REQUEST_APPROVED_NOTIFICATION_TEMPLATE_NAME,
+        Language::Fr,
+      ),
+      access_request_approved_notification_template_fr,
+    ),
+    (
+      localized_template_name(PAGE_MENTION_NOTIFICATION_TEMPLATE_NAME, Language::En),
+      page_mention_notification_template_en,
+    ),
+    (
+      localized_template_name(PAGE_MENTION_NOTIFICATION_TEMPLATE_NAME, Language::Fr),
+      page_mention_notification_template_fr,
     ),
   ]);
 
   for (template_name, template_string) in template_strings {
     mailer
-      .register_template(template_name, template_string)
+      .register_template(&template_name, template_string)
       .await
       .map_err(|err| anyhow::anyhow!(format!("Failed to register handlebars template: {}", err)))?;
   }

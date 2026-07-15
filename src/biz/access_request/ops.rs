@@ -58,6 +58,7 @@ pub async fn create_access_request(
           workspace_member_count: access_request.workspace.member_count.unwrap_or(0),
           approve_url,
         },
+        mailer::Language::En,
       )
       .await
     {
@@ -157,6 +158,7 @@ pub async fn approve_or_reject_access_request(
             workspace_member_count: access_request.workspace.member_count.unwrap_or(0),
             launch_workspace_url,
           },
+          mailer::Language::En,
         )
         .await
       {

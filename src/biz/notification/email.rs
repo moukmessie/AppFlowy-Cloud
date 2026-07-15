@@ -95,6 +95,7 @@ impl EmailNotificationWorker {
               &mention.mentioned_person_name,
               &mention.mentioned_person_email,
               &param,
+              mailer::Language::En,
             )
             .await
           {

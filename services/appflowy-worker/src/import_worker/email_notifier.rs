@@ -1,6 +1,7 @@
 use crate::import_worker::report::{ImportNotifier, ImportProgress};
-use crate::mailer::{AFWorkerMailer, IMPORT_FAIL_TEMPLATE, IMPORT_SUCCESS_TEMPLATE};
+use crate::mailer::AFWorkerMailer;
 use axum::async_trait;
+use mailer::Language;
 use tracing::{error, trace};
 
 pub struct EmailNotifier(AFWorkerMailer);
@@ -16,27 +17,20 @@ impl ImportNotifier for EmailNotifier {
     match progress {
       ImportProgress::Started { workspace_id: _ } => {},
       ImportProgress::Finished(result) => {
-        let subject = "Notification: Import Report";
         trace!(
           "[Import]: sending import notion report email to {}, params: {:?}",
           result.user_email,
           result,
         );
 
-        let template_name = if result.is_success {
-          IMPORT_SUCCESS_TEMPLATE
-        } else {
-          IMPORT_FAIL_TEMPLATE
-        };
-
         if let Err(err) = self
           .0
-          .send_email_template(
-            Some(result.user_name),
+          .send_import_report(
+            result.user_name,
             &result.user_email,
-            template_name,
+            result.is_success,
             result.value,
-            subject,
+            Language::En,
           )
           .await
         {

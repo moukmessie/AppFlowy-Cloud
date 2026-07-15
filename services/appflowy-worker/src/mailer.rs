@@ -1,8 +1,14 @@
 use mailer::sender::Mailer;
+use mailer::Language;
 use std::ops::Deref;
 
 pub const IMPORT_SUCCESS_TEMPLATE: &str = "import_notion_success";
 pub const IMPORT_FAIL_TEMPLATE: &str = "import_notion_fail";
+
+fn localized_template_name(base: &str, language: Language) -> String {
+  format!("{base}_{}", language.template_suffix())
+}
+
 #[derive(Clone)]
 pub struct AFWorkerMailer(Mailer);
 
@@ -16,18 +22,37 @@ impl Deref for AFWorkerMailer {
 
 impl AFWorkerMailer {
   pub async fn new(mut mailer: Mailer) -> Result<Self, anyhow::Error> {
-    let import_data_success =
+    let import_data_success_en =
       include_str!("../../../assets/mailer_templates/build_production/import_data_success.html");
+    let import_data_success_fr = include_str!(
+      "../../../assets/mailer_templates/build_production/import_data_success_fr.html"
+    );
 
-    let import_data_fail =
+    let import_data_fail_en =
       include_str!("../../../assets/mailer_templates/build_production/import_data_fail.html");
+    let import_data_fail_fr =
+      include_str!("../../../assets/mailer_templates/build_production/import_data_fail_fr.html");
 
     for (name, template) in [
-      (IMPORT_SUCCESS_TEMPLATE, import_data_success),
-      (IMPORT_FAIL_TEMPLATE, import_data_fail),
+      (
+        localized_template_name(IMPORT_SUCCESS_TEMPLATE, Language::En),
+        import_data_success_en,
+      ),
+      (
+        localized_template_name(IMPORT_SUCCESS_TEMPLATE, Language::Fr),
+        import_data_success_fr,
+      ),
+      (
+        localized_template_name(IMPORT_FAIL_TEMPLATE, Language::En),
+        import_data_fail_en,
+      ),
+      (
+        localized_template_name(IMPORT_FAIL_TEMPLATE, Language::Fr),
+        import_data_fail_fr,
+      ),
     ] {
       mailer
-        .register_template(name, template)
+        .register_template(&name, template)
         .await
         .map_err(|err| {
           anyhow::anyhow!(format!("Failed to register handlebars template: {}", err))
@@ -35,6 +60,35 @@ impl AFWorkerMailer {
     }
 
     Ok(Self(mailer))
+  }
+
+  pub async fn send_import_report(
+    &self,
+    recipient_name: String,
+    email: &str,
+    is_success: bool,
+    param: serde_json::Value,
+    language: Language,
+  ) -> Result<(), anyhow::Error> {
+    let template_base = if is_success {
+      IMPORT_SUCCESS_TEMPLATE
+    } else {
+      IMPORT_FAIL_TEMPLATE
+    };
+    let subject = match language {
+      Language::En => "Notification: Import Report",
+      Language::Fr => "Notification : rapport d'importation",
+    };
+    self
+      .0
+      .send_email_template(
+        Some(recipient_name),
+        email,
+        &localized_template_name(template_base, language),
+        param,
+        subject,
+      )
+      .await
   }
 }
 
@@ -54,6 +108,7 @@ pub struct ImportNotionMailerParam {
 mod tests {
   use crate::mailer::{AFWorkerMailer, ImportNotionMailerParam, IMPORT_SUCCESS_TEMPLATE};
   use mailer::sender::Mailer;
+  use mailer::Language;
 
   #[tokio::test]
   async fn render_import_report() {
@@ -80,7 +135,10 @@ mod tests {
     })
     .unwrap();
     let s = worker_mailer
-      .render(IMPORT_SUCCESS_TEMPLATE, &value)
+      .render(
+        &format!("{}_{}", IMPORT_SUCCESS_TEMPLATE, Language::En.template_suffix()),
+        &value,
+      )
       .unwrap();
 
     println!("{}", s);

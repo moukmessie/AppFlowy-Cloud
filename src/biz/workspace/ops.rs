@@ -447,6 +447,7 @@ pub async fn invite_workspace_members(
               workspace_member_count,
               accept_url,
             },
+            mailer::Language::En,
           )
           .await
       });
