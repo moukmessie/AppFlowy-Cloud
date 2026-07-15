@@ -6,7 +6,7 @@ WORKDIR /app
 ARG VERSION=main
 
 RUN npm install -g pnpm@8.5.0
-RUN git clone --depth 1 --branch ${VERSION} https://github.com/AppFlowy-IO/AppFlowy-Web.git .
+RUN git clone --depth 1 --branch ${VERSION} https://github.com/moukmessie/AppFlowy-Web.git .
 RUN pnpm install
 RUN sed -i 's|https://test.appflowy.cloud||g' src/components/main/app.hooks.ts
 RUN pnpm run build
