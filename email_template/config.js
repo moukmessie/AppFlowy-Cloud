@@ -25,6 +25,7 @@ module.exports = {
     },
   },
   locals: {
+    year: new Date().getFullYear(),
     cdnBaseUrl: "",
     userIconUrl: "https://cdn-icons-png.flaticon.com/512/1077/1077012.png",
     error: "Test error message",
