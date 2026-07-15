@@ -31,6 +31,8 @@ pub struct UpdateUserParams {
   pub password: Option<String>,
   pub email: Option<String>,
   pub metadata: Option<UserMetaData>,
+  /// Language preference used to localize mailer notifications (e.g. `"en"`, `"fr"`).
+  pub language: Option<String>,
 }
 
 impl UpdateUserParams {
@@ -51,6 +53,10 @@ impl UpdateUserParams {
   }
   pub fn with_metadata<T: Into<UserMetaData>>(mut self, metadata: T) -> Self {
     self.metadata = Some(metadata.into());
+    self
+  }
+  pub fn with_language<T: ToString>(mut self, language: T) -> Self {
+    self.language = Some(language.to_string());
     self
   }
 }

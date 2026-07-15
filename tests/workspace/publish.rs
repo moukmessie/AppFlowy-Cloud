@@ -487,6 +487,7 @@ async fn test_publish_comments() {
       password: None,
       email: None,
       metadata: None,
+      language: None,
     })
     .await
     .unwrap();
@@ -542,6 +543,7 @@ async fn test_publish_comments() {
       password: None,
       email: None,
       metadata: None,
+      language: None,
     })
     .await
     .unwrap();
@@ -611,6 +613,7 @@ async fn test_publish_comments() {
       password: None,
       email: None,
       metadata: None,
+      language: None,
     })
     .await
     .unwrap();

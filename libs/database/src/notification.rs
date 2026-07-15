@@ -29,6 +29,7 @@ pub async fn select_recent_page_mentions<'a, E: Executor<'a, Database = Postgres
         pm.person_id AS "mentioned_person_id",
         mentioned_person.name AS "mentioned_person_name!",
         mentioned_person.email AS "mentioned_person_email!",
+        mentioned_person.language AS "mentioned_person_language",
         pm.mentioned_at AS "mentioned_at!",
         pm.block_id
       FROM af_page_mention AS pm

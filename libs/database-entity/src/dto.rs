@@ -677,6 +677,8 @@ pub struct AFUserProfile {
   pub encryption_sign: Option<String>,
   pub latest_workspace_id: Uuid,
   pub updated_at: i64,
+  /// Language preference used to localize mailer notifications (e.g. `"en"`, `"fr"`).
+  pub language: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1486,6 +1488,7 @@ pub struct PageMentionNotification {
   pub mentioned_person_id: Uuid,
   pub mentioned_person_name: String,
   pub mentioned_person_email: String,
+  pub mentioned_person_language: Option<String>,
   pub block_id: Option<String>,
 }
 

@@ -89,13 +89,16 @@ impl EmailNotificationWorker {
               .to_string(),
           };
 
+          let recipient_language =
+            mailer::Language::from_code(mention.mentioned_person_language.as_deref());
+
           if let Err(err) = self
             .mailer
             .send_page_mention_notification(
               &mention.mentioned_person_name,
               &mention.mentioned_person_email,
               &param,
-              mailer::Language::En,
+              recipient_language,
             )
             .await
           {

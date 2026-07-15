@@ -1,0 +1,2 @@
+ALTER TABLE af_user
+  ADD COLUMN IF NOT EXISTS language TEXT;

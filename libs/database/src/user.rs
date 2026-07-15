@@ -32,6 +32,7 @@ pub async fn update_user(
   name: Option<String>,
   email: Option<String>,
   metadata: Option<JsonValue>,
+  language: Option<String>,
 ) -> Result<(), AppError> {
   let mut set_clauses = Vec::new();
   let mut args = PgArguments::default();
@@ -51,6 +52,15 @@ pub async fn update_user(
     set_clauses.push(format!("email = ${}", args_num));
     args.add(e).map_err(|err| AppError::SqlxArgEncodingError {
       desc: format!("unable to encode email for user {}", user_uuid),
+      err,
+    })?;
+  }
+
+  if let Some(l) = language {
+    args_num += 1;
+    set_clauses.push(format!("language = ${}", args_num));
+    args.add(l).map_err(|err| AppError::SqlxArgEncodingError {
+      desc: format!("unable to encode language for user {}", user_uuid),
       err,
     })?;
   }
@@ -250,6 +260,47 @@ pub async fn select_email_from_user_uid(pool: &PgPool, user_uid: i64) -> Result<
   .fetch_one(pool)
   .await?;
   Ok(email)
+}
+
+/// Returns the persisted language preference (e.g. `"en"`, `"fr"`) for the
+/// given user, if the user exists and has one set.
+#[inline]
+pub async fn select_language_from_uid<'a, E: Executor<'a, Database = Postgres>>(
+  executor: E,
+  uid: i64,
+) -> Result<Option<String>, AppError> {
+  let language = sqlx::query_scalar!(
+    r#"
+      SELECT language FROM af_user WHERE uid = $1
+    "#,
+    uid
+  )
+  .fetch_optional(executor)
+  .await?
+  .flatten();
+  Ok(language)
+}
+
+/// Returns the persisted language preference (e.g. `"en"`, `"fr"`) for the
+/// user with the given email, if one exists and has a preference set.
+///
+/// Used for flows (e.g. workspace invites) where the recipient may not have
+/// an account yet, in which case `Ok(None)` is returned rather than an error.
+#[inline]
+pub async fn select_language_from_email(
+  pool: &PgPool,
+  email: &str,
+) -> Result<Option<String>, AppError> {
+  let language = sqlx::query_scalar!(
+    r#"
+      SELECT language FROM af_user WHERE email = $1
+    "#,
+    email
+  )
+  .fetch_optional(pool)
+  .await?
+  .flatten();
+  Ok(language)
 }
 
 #[inline]

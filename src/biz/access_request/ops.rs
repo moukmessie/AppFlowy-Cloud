@@ -39,6 +39,11 @@ pub async fn create_access_request(
   );
   let email = access_request.workspace.owner_email.clone();
   let recipient_name = access_request.workspace.owner_name.clone();
+  let recipient_language = mailer::Language::from_code(
+    database::user::select_language_from_uid(pg_pool, access_request.workspace.owner_uid)
+      .await?
+      .as_deref(),
+  );
   // use default icon until we have workspace icon
   let workspace_icon_url =
     "https://miro.medium.com/v2/resize:fit:2400/1*mTPfm7CwU31-tLhtLNkyJw.png".to_string();
@@ -58,7 +63,7 @@ pub async fn create_access_request(
           workspace_member_count: access_request.workspace.member_count.unwrap_or(0),
           approve_url,
         },
-        mailer::Language::En,
+        recipient_language,
       )
       .await
     {
@@ -143,6 +148,11 @@ pub async fn approve_or_reject_access_request(
       "{}/app/{}",
       appflowy_web_url, &access_request.workspace.workspace_id
     );
+    let recipient_language = mailer::Language::from_code(
+      database::user::select_language_from_uid(pg_pool, access_request.requester.uid)
+        .await?
+        .as_deref(),
+    );
 
     // use default icon until we have workspace icon
     let workspace_icon_url =
@@ -158,7 +168,7 @@ pub async fn approve_or_reject_access_request(
             workspace_member_count: access_request.workspace.member_count.unwrap_or(0),
             launch_workspace_url,
           },
-          mailer::Language::En,
+          recipient_language,
         )
         .await
       {

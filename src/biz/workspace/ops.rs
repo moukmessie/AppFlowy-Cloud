@@ -435,6 +435,11 @@ pub async fn invite_workspace_members(
 
     if !invitation.skip_email_send {
       let cloned_mailer = mailer.clone();
+      let recipient_language = mailer::Language::from_code(
+        database::user::select_language_from_email(pg_pool, &invitation.email)
+          .await?
+          .as_deref(),
+      );
       let email_sending = tokio::spawn(async move {
         cloned_mailer
           .send_workspace_invite(
@@ -447,7 +452,7 @@ pub async fn invite_workspace_members(
               workspace_member_count,
               accept_url,
             },
-            mailer::Language::En,
+            recipient_language,
           )
           .await
       });

@@ -1,7 +1,4 @@
 /// The language a mailer template should be rendered in.
-///
-/// There is currently no persisted per-user/workspace language preference,
-/// so every call site explicitly passes a `Language` and defaults to `En`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Language {
   #[default]
@@ -16,6 +13,15 @@ impl Language {
     match self {
       Language::En => "en",
       Language::Fr => "fr",
+    }
+  }
+
+  /// Parses a persisted language code (e.g. from the `af_user.language`
+  /// column). Unknown or missing codes fall back to the default (`En`).
+  pub fn from_code(code: Option<&str>) -> Self {
+    match code {
+      Some("fr") => Language::Fr,
+      _ => Language::En,
     }
   }
 }
