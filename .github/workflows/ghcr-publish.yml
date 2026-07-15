@@ -1,0 +1,142 @@
+name: Publish to GHCR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  appflowy_cloud:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          cache-from: type=gha,scope=appflowy_cloud
+          cache-to: type=gha,mode=max,scope=appflowy_cloud
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/appflowy-cloud:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/appflowy-cloud:${{ github.sha }}
+          build-args: |
+            PROFILE=release
+
+  gotrue:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker/gotrue
+          file: ./docker/gotrue/Dockerfile
+          push: true
+          cache-from: type=gha,scope=gotrue
+          cache-to: type=gha,mode=max,scope=gotrue
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/gotrue:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/gotrue:${{ github.sha }}
+
+  admin_frontend:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./admin_frontend/Dockerfile
+          push: true
+          cache-from: type=gha,scope=admin_frontend
+          cache-to: type=gha,mode=max,scope=admin_frontend
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/admin-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/admin-frontend:${{ github.sha }}
+          build-args: |
+            PROFILE=release
+
+  appflowy_worker:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./services/appflowy-worker/Dockerfile
+          push: true
+          cache-from: type=gha,scope=appflowy_worker
+          cache-to: type=gha,mode=max,scope=appflowy_worker
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/appflowy-worker:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/appflowy-worker:${{ github.sha }}
+          build-args: |
+            PROFILE=release
