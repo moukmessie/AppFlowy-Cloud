@@ -1,6 +1,9 @@
 use actix_web::{web, Scope};
+use gotrue::params::{AdminUserParams, InviteUserParams};
+use gotrue_entity::dto::User as GoTrueUser;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use crate::biz::authentication::jwt::Authorization;
@@ -27,6 +30,31 @@ struct ListUsersQuery {
 #[derive(Debug, Deserialize)]
 struct SetSystemAdmin {
   enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateAdminUser {
+  email: String,
+  password: Option<String>,
+  name: Option<String>,
+  #[serde(default)]
+  email_confirm: bool,
+  #[serde(default)]
+  is_system_admin: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct InviteAdminUser {
+  email: String,
+  name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateAdminUser {
+  email: Option<String>,
+  name: Option<String>,
+  password: Option<String>,
+  ban_duration: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -63,7 +91,13 @@ struct PendingGuestInvitation {
 
 pub fn admin_scope() -> Scope {
   web::scope("/api/admin")
-    .service(web::resource("/users").route(web::get().to(list_users)))
+    .service(
+      web::resource("/users")
+        .route(web::get().to(list_users))
+        .route(web::post().to(create_user)),
+    )
+    .service(web::resource("/users/invite").route(web::post().to(invite_user)))
+    .service(web::resource("/users/{user_uuid}").route(web::patch().to(update_user)))
     .service(
       web::resource("/users/{user_uuid}/system-admin")
         .route(web::put().to(set_system_admin)),
@@ -93,6 +127,25 @@ pub fn admin_scope() -> Scope {
       web::resource("/guests/pending-admin-approval/{invite_id}/reject")
         .route(web::post().to(reject_guest_invitation)),
     )
+}
+
+fn metadata_map(value: serde_json::Value) -> BTreeMap<String, serde_json::Value> {
+  serde_json::from_value(value).unwrap_or_default()
+}
+
+fn user_to_admin_params(user: GoTrueUser) -> AdminUserParams {
+  AdminUserParams {
+    aud: user.aud,
+    role: user.role,
+    email: user.email,
+    phone: user.phone,
+    password: None,
+    email_confirm: user.email_confirmed_at.is_some(),
+    phone_confirm: user.phone_confirmed_at.is_some(),
+    user_metadata: metadata_map(user.user_metadata),
+    app_metadata: metadata_map(user.app_metadata),
+    ban_duration: String::new(),
+  }
 }
 
 const SUPPORTED_SYSTEM_CONFIG: [&str; 2] = [
@@ -148,6 +201,129 @@ async fn list_users(
   .map_err(actix_web::error::ErrorInternalServerError)?;
 
   Ok(AppResponse::Ok().with_data(users).into())
+}
+
+async fn create_user(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  payload: web::Json<CreateAdminUser>,
+) -> Result<JsonAppResponse<GoTrueUser>, actix_web::Error> {
+  require_system_admin(&state, &auth).await?;
+  let email = payload.email.trim().to_lowercase();
+  if !email.contains('@') {
+    return Err(actix_web::error::ErrorBadRequest("Invalid email"));
+  }
+  let mut user_metadata = BTreeMap::new();
+  if let Some(name) = payload.name.as_ref().map(|name| name.trim()).filter(|v| !v.is_empty()) {
+    user_metadata.insert("name".to_string(), serde_json::json!(name));
+  }
+  let mut app_metadata = BTreeMap::new();
+  app_metadata.insert(
+    "is_system_admin".to_string(),
+    serde_json::json!(payload.is_system_admin),
+  );
+  let params = AdminUserParams {
+    aud: "authenticated".to_string(),
+    role: "authenticated".to_string(),
+    email,
+    password: payload.password.clone(),
+    email_confirm: payload.email_confirm,
+    user_metadata,
+    app_metadata,
+    ..Default::default()
+  };
+  let token = state
+    .gotrue_admin
+    .token()
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+  let user = state
+    .gotrue_client
+    .admin_add_user(&token, &params)
+    .await
+    .map_err(actix_web::error::ErrorBadGateway)?;
+  Ok(AppResponse::Ok().with_data(user).into())
+}
+
+async fn invite_user(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  payload: web::Json<InviteAdminUser>,
+) -> Result<JsonAppResponse<GoTrueUser>, actix_web::Error> {
+  require_system_admin(&state, &auth).await?;
+  let email = payload.email.trim().to_lowercase();
+  if !email.contains('@') {
+    return Err(actix_web::error::ErrorBadRequest("Invalid email"));
+  }
+  let data = payload
+    .name
+    .as_ref()
+    .map(|name| serde_json::json!({ "name": name.trim() }))
+    .unwrap_or_else(|| serde_json::json!({}));
+  let token = state
+    .gotrue_admin
+    .token()
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+  let user = state
+    .gotrue_client
+    .admin_invite_user(&token, &InviteUserParams { email, data })
+    .await
+    .map_err(actix_web::error::ErrorBadGateway)?;
+  Ok(AppResponse::Ok().with_data(user).into())
+}
+
+async fn update_user(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  user_uuid: web::Path<Uuid>,
+  payload: web::Json<UpdateAdminUser>,
+) -> Result<JsonAppResponse<GoTrueUser>, actix_web::Error> {
+  require_system_admin(&state, &auth).await?;
+  let user_uuid = user_uuid.into_inner();
+  let token = state
+    .gotrue_admin
+    .token()
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+  let existing = state
+    .gotrue_client
+    .admin_user_details(&token, &user_uuid.to_string())
+    .await
+    .map_err(actix_web::error::ErrorBadGateway)?;
+  let mut params = user_to_admin_params(existing);
+  if let Some(email) = &payload.email {
+    params.email = email.trim().to_lowercase();
+  }
+  if let Some(name) = &payload.name {
+    params
+      .user_metadata
+      .insert("name".to_string(), serde_json::json!(name.trim()));
+  }
+  params.password = payload.password.clone();
+  if let Some(ban_duration) = &payload.ban_duration {
+    params.ban_duration = ban_duration.clone();
+  }
+  let user = state
+    .gotrue_client
+    .admin_update_user(&token, &user_uuid.to_string(), &params)
+    .await
+    .map_err(actix_web::error::ErrorBadGateway)?;
+  if payload.email.is_some() || payload.name.is_some() {
+    sqlx::query(
+      r#"UPDATE af_user SET
+           email = COALESCE($2, email),
+           name = COALESCE($3, name)
+         WHERE uuid = $1"#,
+    )
+    .bind(user_uuid)
+    .bind(payload.email.as_ref().map(|email| email.trim().to_lowercase()))
+    .bind(payload.name.as_ref().map(|name| name.trim().to_string()))
+    .execute(&state.pg_pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+  }
+  Ok(AppResponse::Ok().with_data(user).into())
 }
 
 async fn set_system_admin(
