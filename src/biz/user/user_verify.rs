@@ -31,6 +31,7 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
 
   let is_new = !is_user_exist(txn.deref_mut(), &user_uuid).await?;
   if is_new {
+    enforce_signup_whitelist(txn.deref_mut(), &user.email).await?;
     let new_uid = state.id_gen.write().await.next_id();
     event!(tracing::Level::INFO, "create new user:{}", new_uid);
     let workspace_id =
@@ -71,6 +72,45 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
   }
 
   Ok(is_new)
+}
+
+async fn enforce_signup_whitelist(
+  executor: &mut sqlx::PgConnection,
+  email: &str,
+) -> Result<(), AppError> {
+  let enabled = sqlx::query_scalar::<_, bool>(
+    r#"SELECT COALESCE(
+         (SELECT (value #>> '{}')::boolean
+            FROM af_system_config
+           WHERE key = 'signup_whitelist_enabled'),
+         false)"#,
+  )
+  .fetch_one(&mut *executor)
+  .await?;
+  if !enabled {
+    return Ok(());
+  }
+
+  let normalized = email.trim().to_lowercase();
+  let domain = normalized.rsplit_once('@').map(|(_, domain)| domain);
+  let allowed = sqlx::query_scalar::<_, bool>(
+    r#"SELECT EXISTS (
+         SELECT 1 FROM af_signup_whitelist
+          WHERE (kind = 'email' AND value = $1)
+             OR (kind = 'domain' AND value = $2)
+       )"#,
+  )
+  .bind(&normalized)
+  .bind(domain)
+  .fetch_one(&mut *executor)
+  .await?;
+  if !allowed {
+    return Err(AppError::InvalidRequest(format!(
+      "Email domain is not allowed: {}",
+      email
+    )));
+  }
+  Ok(())
 }
 
 // Best effort to get user's name after oauth
