@@ -364,6 +364,9 @@ pub fn workspace_scope() -> Scope {
     .service(
       web::resource("/{workspace_id}/folder").route(web::get().to(get_workspace_folder_handler)),
     )
+    .service(
+      web::resource("/{workspace_id}/view/{view_id}").route(web::get().to(get_workspace_view_handler)),
+    )
     .service(web::resource("/{workspace_id}/recent").route(web::get().to(get_recent_views_handler)))
     .service(
       web::resource("/{workspace_id}/favorite").route(web::get().to(get_favorite_views_handler)),
@@ -2485,6 +2488,41 @@ async fn get_workspace_folder_handler(
   )
   .await?;
   Ok(Json(AppResponse::Ok().with_data(folder_view)))
+}
+
+#[derive(serde::Serialize)]
+struct FolderViewWithRid {
+  #[serde(flatten)]
+  folder_view: FolderView,
+  folder_rid: String,
+}
+
+async fn get_workspace_view_handler(
+  user_uuid: UserUuid,
+  path: web::Path<(Uuid, Uuid)>,
+  state: Data<AppState>,
+  query: web::Query<QueryWorkspaceFolder>,
+  req: HttpRequest,
+) -> Result<Json<AppResponse<FolderViewWithRid>>> {
+  let (workspace_id, view_id) = path.into_inner();
+  let depth = query.depth.unwrap_or(1);
+  let uid = state.user_cache.get_user_uid(&user_uuid).await?;
+  let user = realtime_user_for_web_request(req.headers(), uid)?;
+  state
+    .workspace_access_control
+    .enforce_role_weak(&uid, &workspace_id, AFRole::Member)
+    .await?;
+  let folder_view =
+    biz::collab::ops::get_user_workspace_structure(&state, user, workspace_id, depth, &view_id)
+      .await?;
+  // AppFlowy Web's /view/{view_id} contract expects a folder_rid used to skip refetching
+  // when nothing changed. We don't track a real revision id, so derive one from
+  // last_edited_time; a stale value only costs an extra refetch, it never breaks.
+  let folder_rid = format!("{}-0", folder_view.last_edited_time.timestamp_millis());
+  Ok(Json(AppResponse::Ok().with_data(FolderViewWithRid {
+    folder_view,
+    folder_rid,
+  })))
 }
 
 async fn get_recent_views_handler(
