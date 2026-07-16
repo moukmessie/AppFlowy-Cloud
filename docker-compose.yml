@@ -156,9 +156,9 @@ services:
       # and rely on the whitelist + invitations to gate who can sign up.
       - SIGNUP_WHITELIST_ENABLED=${SIGNUP_WHITELIST_ENABLED:-false}
       - GUEST_INVITES_REQUIRE_ADMIN_APPROVAL=${GUEST_INVITES_REQUIRE_ADMIN_APPROVAL:-false}
-    image: ghcr.io/moukmessie/appflowy-cloud:${APPFLOWY_CLOUD_VERSION:-latest}
+    image: appflowyinc/appflowy_cloud:${APPFLOWY_CLOUD_VERSION:-latest}
     healthcheck:
-      test: "curl --fail http://127.0.0.1:8000/health || exit 1"
+      test: "curl --fail http://127.0.0.1:8000/api/health || exit 1"
       interval: 5s
       timeout: 5s
       retries: 12
@@ -168,12 +168,10 @@ services:
 
   admin_frontend:
     restart: on-failure
-    image: ghcr.io/moukmessie/admin-frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION:-latest}
+    image: appflowyinc/admin_frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION:-latest}
     environment:
-      - ADMIN_FRONTEND_REDIS_URL=${ADMIN_FRONTEND_REDIS_URL:-redis://redis:6379}
-      - ADMIN_FRONTEND_GOTRUE_URL=${ADMIN_FRONTEND_GOTRUE_URL:-http://gotrue:9999}
-      - ADMIN_FRONTEND_APPFLOWY_CLOUD_URL=${ADMIN_FRONTEND_APPFLOWY_CLOUD_URL:-http://appflowy_cloud:8000}
-      - ADMIN_FRONTEND_PATH_PREFIX=${ADMIN_FRONTEND_PATH_PREFIX:-}
+      - APPFLOWY_GOTRUE_BASE_URL=${APPFLOWY_GOTRUE_BASE_URL:-http://gotrue:9999}
+      - APPFLOWY_BASE_URL=${APPFLOWY_BASE_URL:-http://appflowy_cloud:8000}
 
     depends_on:
       gotrue:
