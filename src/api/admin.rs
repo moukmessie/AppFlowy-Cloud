@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use crate::biz::authentication::jwt::Authorization;
+use crate::biz::user::user_delete::admin_delete_user;
 use crate::biz::user::system_admin::is_system_admin;
 use crate::state::AppState;
 use shared_entity::response::{AppResponse, JsonAppResponse};
@@ -97,7 +98,11 @@ pub fn admin_scope() -> Scope {
         .route(web::post().to(create_user)),
     )
     .service(web::resource("/users/invite").route(web::post().to(invite_user)))
-    .service(web::resource("/users/{user_uuid}").route(web::patch().to(update_user)))
+    .service(
+      web::resource("/users/{user_uuid}")
+        .route(web::patch().to(update_user))
+        .route(web::delete().to(delete_user)),
+    )
     .service(
       web::resource("/users/{user_uuid}/system-admin")
         .route(web::put().to(set_system_admin)),
@@ -324,6 +329,52 @@ async fn update_user(
     .map_err(actix_web::error::ErrorInternalServerError)?;
   }
   Ok(AppResponse::Ok().with_data(user).into())
+}
+
+async fn delete_user(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  user_uuid: web::Path<Uuid>,
+) -> Result<JsonAppResponse<()>, actix_web::Error> {
+  let actor_uuid = require_system_admin(&state, &auth).await?;
+  let target_uuid = user_uuid.into_inner();
+  if actor_uuid == target_uuid {
+    return Err(actix_web::error::ErrorConflict(
+      "A system administrator cannot delete their own account",
+    ));
+  }
+
+  let target_is_admin = is_system_admin(&state.pg_pool, &target_uuid)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+  if target_is_admin {
+    let admin_count = sqlx::query_scalar::<_, i64>(
+      r#"SELECT COUNT(*) FROM auth.users
+          WHERE COALESCE(is_super_admin, false)
+             OR COALESCE((raw_app_meta_data->>'is_system_admin')::boolean, false)"#,
+    )
+    .fetch_one(&state.pg_pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+    if admin_count <= 1 {
+      return Err(actix_web::error::ErrorConflict(
+        "The last system administrator cannot be deleted",
+      ));
+    }
+  }
+
+  admin_delete_user(
+    &state.pg_pool,
+    &state.redis_connection_manager,
+    &state.bucket_storage,
+    &state.gotrue_client,
+    &state.gotrue_admin,
+    target_uuid,
+  )
+  .await
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+  tracing::info!(actor_uuid = %actor_uuid, target_uuid = %target_uuid, "user deleted by system administrator");
+  Ok(AppResponse::Ok().into())
 }
 
 async fn set_system_admin(
