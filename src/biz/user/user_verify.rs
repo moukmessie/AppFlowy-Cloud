@@ -11,6 +11,7 @@ use database_entity::dto::AFRole;
 use workspace_template::document::getting_started::GettingStartedTemplate;
 
 use crate::biz::user::user_init::initialize_workspace_for_user;
+use crate::biz::user::system_admin::app_metadata_is_system_admin;
 use crate::state::AppState;
 
 /// Verify the token from the gotrue server and create the user if it is a new user
@@ -21,6 +22,12 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
   let user = state.gotrue_client.user_info(access_token).await?;
   let user_uuid = uuid::Uuid::parse_str(&user.id)?;
   let name = name_from_user_metadata(&user.user_metadata);
+  if app_metadata_is_system_admin(&user.app_metadata) {
+    return Err(AppError::InvalidRequest(
+      "System admin accounts must use the admin console and cannot sign in via client apps."
+        .to_string(),
+    ));
+  }
 
   // Create new user if it doesn't exist
   let mut txn = state
