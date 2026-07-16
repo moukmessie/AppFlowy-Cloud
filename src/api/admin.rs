@@ -100,6 +100,23 @@ struct PendingGuestInvitation {
   created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Serialize, FromRow)]
+struct AdminAuditEntry {
+  id: Uuid,
+  actor_uuid: Option<Uuid>,
+  action: String,
+  target_type: String,
+  target_id: Option<String>,
+  metadata: serde_json::Value,
+  created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuditQuery {
+  limit: Option<i64>,
+  offset: Option<i64>,
+}
+
 pub fn admin_scope() -> Scope {
   web::scope("/api/admin")
     .service(
@@ -151,6 +168,49 @@ pub fn admin_scope() -> Scope {
       web::resource("/guests/pending-admin-approval/{invite_id}/reject")
         .route(web::post().to(reject_guest_invitation)),
     )
+    .service(web::resource("/audit-log").route(web::get().to(list_audit_log)))
+}
+
+async fn record_admin_action(
+  state: &AppState,
+  actor_uuid: Uuid,
+  action: &str,
+  target_type: &str,
+  target_id: Option<String>,
+  metadata: serde_json::Value,
+) -> Result<(), actix_web::Error> {
+  sqlx::query(
+    r#"INSERT INTO af_admin_audit_log
+       (actor_uuid, action, target_type, target_id, metadata)
+       VALUES ($1, $2, $3, $4, $5)"#,
+  )
+  .bind(actor_uuid)
+  .bind(action)
+  .bind(target_type)
+  .bind(target_id)
+  .bind(metadata)
+  .execute(&state.pg_pool)
+  .await
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+  Ok(())
+}
+
+async fn list_audit_log(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  query: web::Query<AuditQuery>,
+) -> Result<JsonAppResponse<Vec<AdminAuditEntry>>, actix_web::Error> {
+  require_system_admin(&state, &auth).await?;
+  let rows = sqlx::query_as::<_, AdminAuditEntry>(
+    r#"SELECT id, actor_uuid, action, target_type, target_id, metadata, created_at
+       FROM af_admin_audit_log ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
+  )
+  .bind(query.limit.unwrap_or(100).clamp(1, 500))
+  .bind(query.offset.unwrap_or(0).max(0))
+  .fetch_all(&state.pg_pool)
+  .await
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+  Ok(AppResponse::Ok().with_data(rows).into())
 }
 
 fn metadata_map(value: serde_json::Value) -> BTreeMap<String, serde_json::Value> {
@@ -444,6 +504,15 @@ async fn set_system_admin(
     enabled = payload.enabled,
     "system administrator role changed"
   );
+  record_admin_action(
+    &state,
+    actor_uuid,
+    if payload.enabled { "system_admin.grant" } else { "system_admin.revoke" },
+    "user",
+    Some(target_uuid.to_string()),
+    serde_json::json!({ "enabled": payload.enabled }),
+  )
+  .await?;
   Ok(AppResponse::Ok().into())
 }
 
@@ -483,12 +552,21 @@ async fn upsert_system_config(
        ON CONFLICT (key) DO UPDATE
        SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()"#,
   )
-  .bind(key)
+  .bind(&key)
   .bind(&payload.value)
   .bind(actor_uuid)
   .execute(&state.pg_pool)
   .await
   .map_err(actix_web::error::ErrorInternalServerError)?;
+  record_admin_action(
+    &state,
+    actor_uuid,
+    "system_config.update",
+    "system_config",
+    Some(key.clone()),
+    serde_json::json!({ "value": payload.value }),
+  )
+  .await?;
   Ok(AppResponse::Ok().into())
 }
 
