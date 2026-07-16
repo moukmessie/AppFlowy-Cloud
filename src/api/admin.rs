@@ -4,6 +4,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::biz::authentication::jwt::Authorization;
+use crate::biz::user::system_admin::is_system_admin;
 use crate::state::AppState;
 use shared_entity::response::{AppResponse, JsonAppResponse};
 
@@ -104,9 +105,7 @@ async fn require_system_admin(
   auth: &Authorization,
 ) -> Result<Uuid, actix_web::Error> {
   let user_uuid = auth.uuid()?;
-  let allowed = sqlx::query_scalar::<_, bool>("SELECT public.af_is_system_admin($1)")
-    .bind(user_uuid)
-    .fetch_one(&state.pg_pool)
+  let allowed = is_system_admin(&state.pg_pool, &user_uuid)
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
