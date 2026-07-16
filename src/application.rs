@@ -52,6 +52,7 @@ use mailer::sender::Mailer;
 use snowflake::Snowflake;
 
 use crate::api::access_request::access_request_scope;
+use crate::api::admin::admin_scope;
 use crate::api::ai::ai_completion_scope;
 use crate::api::chat::chat_scope;
 use crate::api::data_import::data_import_scope;
@@ -152,6 +153,7 @@ pub async fn run_actix_server(
 
     app
       .service(server_info_scope())
+      .service(admin_scope())
       .service(user_scope())
       .service(workspace_scope())
       .service(invite_code_scope())
