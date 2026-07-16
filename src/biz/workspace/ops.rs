@@ -333,6 +333,28 @@ pub async fn accept_workspace_invite(
 ) -> Result<(), AppError> {
   let mut txn = pg_pool.begin().await?;
   let inv = get_invitation_by_id(&mut txn, invite_id).await?;
+  if inv.role == AFRole::Guest {
+    let requires_approval = sqlx::query_scalar::<_, bool>(
+      r#"SELECT COALESCE(
+           (SELECT (value #>> '{}')::boolean FROM af_system_config
+             WHERE key = 'guest_invites_require_admin_approval'), false)"#,
+    )
+    .fetch_one(txn.deref_mut())
+    .await?;
+    if requires_approval {
+      let approved = sqlx::query_scalar::<_, bool>(
+        "SELECT admin_approval_status = 1 FROM af_workspace_invitation WHERE id = $1",
+      )
+      .bind(invite_id)
+      .fetch_one(txn.deref_mut())
+      .await?;
+      if !approved {
+        return Err(AppError::InvalidRequest(
+          "Guest invitation is pending administrator approval".to_string(),
+        ));
+      }
+    }
+  }
   if let Some(invitee_uid) = inv.invitee_uid {
     if invitee_uid != user_uid {
       return Err(AppError::NotInviteeOfWorkspaceInvitation(format!(
