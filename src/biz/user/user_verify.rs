@@ -38,7 +38,7 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
 
   let is_new = !is_user_exist(txn.deref_mut(), &user_uuid).await?;
   if is_new {
-    enforce_signup_whitelist(txn.deref_mut(), &user.email).await?;
+    enforce_signup_email_policy(txn.deref_mut(), &user.email).await?;
     let new_uid = state.id_gen.write().await.next_id();
     event!(tracing::Level::INFO, "create new user:{}", new_uid);
     let workspace_id =
@@ -81,7 +81,7 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
   Ok(is_new)
 }
 
-async fn enforce_signup_whitelist(
+async fn enforce_signup_email_policy(
   executor: &mut sqlx::PgConnection,
   email: &str,
 ) -> Result<(), AppError> {
@@ -94,12 +94,34 @@ async fn enforce_signup_whitelist(
   )
   .fetch_one(&mut *executor)
   .await?;
+  let normalized = email.trim().to_lowercase();
+  let domain = normalized.rsplit_once('@').map(|(_, domain)| domain);
+  let disposable_blocked = sqlx::query_scalar::<_, bool>(
+    r#"SELECT COALESCE((SELECT (value #>> '{}')::boolean
+           FROM af_system_config
+          WHERE key = 'block_disposable_email_domains'), true)"#,
+  )
+  .fetch_one(&mut *executor)
+  .await?;
+  if disposable_blocked {
+    if let Some(domain) = domain {
+      let disposable = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM af_disposable_email_domain WHERE domain = $1)",
+      )
+      .bind(domain)
+      .fetch_one(&mut *executor)
+      .await?;
+      if disposable {
+        return Err(AppError::InvalidRequest(format!(
+          "Disposable email domain is not allowed: {}",
+          domain
+        )));
+      }
+    }
+  }
   if !enabled {
     return Ok(());
   }
-
-  let normalized = email.trim().to_lowercase();
-  let domain = normalized.rsplit_once('@').map(|(_, domain)| domain);
   let allowed = sqlx::query_scalar::<_, bool>(
     r#"SELECT EXISTS (
          SELECT 1 FROM af_signup_whitelist
