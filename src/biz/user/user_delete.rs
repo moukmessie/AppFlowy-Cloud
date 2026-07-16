@@ -38,6 +38,27 @@ pub async fn delete_user(
     };
   }
 
+  admin_delete_user(
+    pg_pool,
+    connection_manager,
+    bucket_storage,
+    gotrue_client,
+    gotrue_admin,
+    user_uuid,
+  )
+  .await
+}
+
+/// Permanently removes a user and all workspaces they own. Provider token
+/// revocation is deliberately handled by the self-service wrapper above.
+pub async fn admin_delete_user(
+  pg_pool: &sqlx::PgPool,
+  connection_manager: &ConnectionManager,
+  bucket_storage: &Arc<S3BucketStorage>,
+  gotrue_client: &gotrue::api::Client,
+  gotrue_admin: &GoTrueAdmin,
+  user_uuid: Uuid,
+) -> Result<(), AppResponseError> {
   info!("admin deleting user: {:?}", user_uuid);
   let admin_token = gotrue_admin.token().await?;
   gotrue_client

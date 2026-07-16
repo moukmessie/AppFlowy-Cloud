@@ -441,6 +441,13 @@ async fn create_workspace_handler(
   state: Data<AppState>,
   create_workspace_param: Json<CreateWorkspaceParam>,
 ) -> Result<Json<AppResponse<AFWorkspace>>> {
+  if crate::biz::user::system_admin::is_system_admin(&state.pg_pool, &uuid).await? {
+    return Err(AppResponseError::new(
+      app_error::ErrorCode::NotEnoughPermissions,
+      "System admin accounts cannot create workspaces",
+    )
+    .into());
+  }
   let uid = state.user_cache.get_user_uid(&uuid).await?;
   let create_workspace_param = create_workspace_param.into_inner();
   let workspace_name = create_workspace_param

@@ -11,6 +11,7 @@ use database_entity::dto::AFRole;
 use workspace_template::document::getting_started::GettingStartedTemplate;
 
 use crate::biz::user::user_init::initialize_workspace_for_user;
+use crate::biz::user::system_admin::app_metadata_is_system_admin;
 use crate::state::AppState;
 
 /// Verify the token from the gotrue server and create the user if it is a new user
@@ -21,6 +22,12 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
   let user = state.gotrue_client.user_info(access_token).await?;
   let user_uuid = uuid::Uuid::parse_str(&user.id)?;
   let name = name_from_user_metadata(&user.user_metadata);
+  if app_metadata_is_system_admin(&user.app_metadata) {
+    return Err(AppError::InvalidRequest(
+      "System admin accounts must use the admin console and cannot sign in via client apps."
+        .to_string(),
+    ));
+  }
 
   // Create new user if it doesn't exist
   let mut txn = state
@@ -31,6 +38,7 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
 
   let is_new = !is_user_exist(txn.deref_mut(), &user_uuid).await?;
   if is_new {
+    enforce_signup_email_policy(txn.deref_mut(), &user.email).await?;
     let new_uid = state.id_gen.write().await.next_id();
     event!(tracing::Level::INFO, "create new user:{}", new_uid);
     let workspace_id =
@@ -71,6 +79,67 @@ pub async fn verify_token(access_token: &str, state: &AppState) -> Result<bool, 
   }
 
   Ok(is_new)
+}
+
+async fn enforce_signup_email_policy(
+  executor: &mut sqlx::PgConnection,
+  email: &str,
+) -> Result<(), AppError> {
+  let enabled = sqlx::query_scalar::<_, bool>(
+    r#"SELECT COALESCE(
+         (SELECT (value #>> '{}')::boolean
+            FROM af_system_config
+           WHERE key = 'signup_whitelist_enabled'),
+         false)"#,
+  )
+  .fetch_one(&mut *executor)
+  .await?;
+  let normalized = email.trim().to_lowercase();
+  let domain = normalized.rsplit_once('@').map(|(_, domain)| domain);
+  let disposable_blocked = sqlx::query_scalar::<_, bool>(
+    r#"SELECT COALESCE((SELECT (value #>> '{}')::boolean
+           FROM af_system_config
+          WHERE key = 'block_disposable_email_domains'), true)"#,
+  )
+  .fetch_one(&mut *executor)
+  .await?;
+  if disposable_blocked {
+    if let Some(domain) = domain {
+      let disposable = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM af_disposable_email_domain WHERE domain = $1)",
+      )
+      .bind(domain)
+      .fetch_one(&mut *executor)
+      .await?;
+      if disposable {
+        return Err(AppError::InvalidRequest(format!(
+          "Disposable email domain is not allowed: {}",
+          domain
+        )));
+      }
+    }
+  }
+  if !enabled {
+    return Ok(());
+  }
+  let allowed = sqlx::query_scalar::<_, bool>(
+    r#"SELECT EXISTS (
+         SELECT 1 FROM af_signup_whitelist
+          WHERE (kind = 'email' AND value = $1)
+             OR (kind = 'domain' AND value = $2)
+       )"#,
+  )
+  .bind(&normalized)
+  .bind(domain)
+  .fetch_one(&mut *executor)
+  .await?;
+  if !allowed {
+    return Err(AppError::InvalidRequest(format!(
+      "Email domain is not allowed: {}",
+      email
+    )));
+  }
+  Ok(())
 }
 
 // Best effort to get user's name after oauth
