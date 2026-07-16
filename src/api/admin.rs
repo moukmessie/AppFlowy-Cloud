@@ -76,6 +76,16 @@ struct SignupWhitelistEntry {
   value: String,
 }
 
+#[derive(Debug, Serialize, FromRow)]
+struct DisposableEmailDomain {
+  domain: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateDisposableEmailDomain {
+  domain: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct CreateSignupWhitelistEntry {
   kind: String,
@@ -121,6 +131,15 @@ pub fn admin_scope() -> Scope {
         .route(web::delete().to(delete_signup_whitelist)),
     )
     .service(
+      web::resource("/disposable-email-domains")
+        .route(web::get().to(list_disposable_email_domains))
+        .route(web::post().to(create_disposable_email_domain)),
+    )
+    .service(
+      web::resource("/disposable-email-domains/{domain}")
+        .route(web::delete().to(delete_disposable_email_domain)),
+    )
+    .service(
       web::resource("/guests/pending-admin-approval")
         .route(web::get().to(list_pending_guest_invitations)),
     )
@@ -153,9 +172,10 @@ fn user_to_admin_params(user: GoTrueUser) -> AdminUserParams {
   }
 }
 
-const SUPPORTED_SYSTEM_CONFIG: [&str; 2] = [
+const SUPPORTED_SYSTEM_CONFIG: [&str; 3] = [
   "signup_whitelist_enabled",
   "guest_invites_require_admin_approval",
+  "block_disposable_email_domains",
 ];
 
 async fn require_system_admin(
@@ -532,6 +552,61 @@ async fn delete_signup_whitelist(
     .map_err(actix_web::error::ErrorInternalServerError)?;
   if result.rows_affected() == 0 {
     return Err(actix_web::error::ErrorNotFound("Whitelist entry not found"));
+  }
+  Ok(AppResponse::Ok().into())
+}
+
+async fn list_disposable_email_domains(
+  auth: Authorization,
+  state: web::Data<AppState>,
+) -> Result<JsonAppResponse<Vec<DisposableEmailDomain>>, actix_web::Error> {
+  require_system_admin(&state, &auth).await?;
+  let domains = sqlx::query_as::<_, DisposableEmailDomain>(
+    "SELECT domain FROM af_disposable_email_domain ORDER BY domain",
+  )
+  .fetch_all(&state.pg_pool)
+  .await
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+  Ok(AppResponse::Ok().with_data(domains).into())
+}
+
+async fn create_disposable_email_domain(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  payload: web::Json<CreateDisposableEmailDomain>,
+) -> Result<JsonAppResponse<DisposableEmailDomain>, actix_web::Error> {
+  let actor_uuid = require_system_admin(&state, &auth).await?;
+  let domain = payload.domain.trim().trim_start_matches('@').to_lowercase();
+  if domain.is_empty() || domain.contains('@') || !domain.contains('.') {
+    return Err(actix_web::error::ErrorBadRequest("Invalid email domain"));
+  }
+  let row = sqlx::query_as::<_, DisposableEmailDomain>(
+    r#"INSERT INTO af_disposable_email_domain (domain, created_by)
+       VALUES ($1, $2) ON CONFLICT (domain) DO UPDATE SET domain = EXCLUDED.domain
+       RETURNING domain"#,
+  )
+  .bind(domain)
+  .bind(actor_uuid)
+  .fetch_one(&state.pg_pool)
+  .await
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+  Ok(AppResponse::Ok().with_data(row).into())
+}
+
+async fn delete_disposable_email_domain(
+  auth: Authorization,
+  state: web::Data<AppState>,
+  domain: web::Path<String>,
+) -> Result<JsonAppResponse<()>, actix_web::Error> {
+  require_system_admin(&state, &auth).await?;
+  let domain = domain.into_inner().trim().trim_start_matches('@').to_lowercase();
+  let result = sqlx::query("DELETE FROM af_disposable_email_domain WHERE domain = $1")
+    .bind(domain)
+    .execute(&state.pg_pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+  if result.rows_affected() == 0 {
+    return Err(actix_web::error::ErrorNotFound("Disposable domain not found"));
   }
   Ok(AppResponse::Ok().into())
 }
